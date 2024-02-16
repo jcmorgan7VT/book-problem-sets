@@ -50,16 +50,16 @@ met_variables <- c("air_temperature")
 ```{r get-NOAA-past, message = F}
 
 # Past stacked weather
-noaa_past_s3 <- neon4cast::noaa_stage3()
+weather_past_s3 <- neon4cast::noaa_stage3()
 
-noaa_past <- noaa_past_s3  |> 
+weather_past <- weather_past_s3  |> 
   dplyr::filter(site_id %in% lake_sites$field_site_id,
                 datetime >= ymd('2017-01-01'),
                 variable %in% met_variables) |> 
   dplyr::collect()
 
 # aggregate the past to mean values
-noaa_past_mean <- noaa_past |> 
+weather_past_mean <- weather_past |> 
   mutate(datetime = as_date(datetime)) |> 
   group_by(datetime, site_id, variable) |> 
   summarize(prediction = mean(prediction, na.rm = TRUE), .groups = "drop") |> 
@@ -71,18 +71,18 @@ noaa_past_mean <- noaa_past |>
 ```{r get-NOAA-future, message = F}
 # Future weather
 # New forecast only available at 5am UTC the next day
-forecast_date <- Sys.Date() 
-noaa_date <- forecast_date - days(1)
+forecast_start_date <- Sys.Date() 
+noaa_date <- forecast_start_date - days(1)
 
-noaa_future_s3 <- neon4cast::noaa_stage2(start_date = as.character(noaa_date))
+weather_forecast_s3 <- neon4cast::noaa_stage2(start_date = as.character(noaa_date))
 
-noaa_future <- noaa_future_s3 |> 
-  dplyr::filter(datetime >= forecast_date,
+weather_forecast <- weather_forecast_s3 |> 
+  dplyr::filter(datetime >= forecast_start_date,
                 site_id %in% lake_sites$field_site_id,
                 variable %in% met_variables) |> 
   collect()
 
-noaa_future_daily <- noaa_future |> 
+weather_forecast_daily <- weather_forecast |> 
   mutate(datetime = as_date(datetime)) |> 
   # mean daily forecasts at each site per ensemble
   group_by(datetime, site_id, parameter, variable) |> 
@@ -97,7 +97,7 @@ noaa_future_daily <- noaa_future |>
 # Generate a dataframe to fit the model from 
 targets_lm <- targets |> 
   pivot_wider(names_from = 'variable', values_from = 'observation') |> 
-  left_join(noaa_past_mean, 
+  left_join(weather_past_mean, 
             by = c("datetime","site_id"))
 
 # Loop through each site and datetime to fit the model
@@ -107,7 +107,7 @@ forecast_df <- NULL
 
 ```{r forecast-loop}
 forecast_horizon <- 30
-forecast_dates <- seq(from = ymd(forecast_date), to = ymd(forecast_date) + forecast_horizon, by = "day")
+forecasted_dates <- seq(from = ymd(forecast_start_date), to = ymd(forecast_start_date) + forecast_horizon, by = "day")
 n_members <- 31
 
 
@@ -118,39 +118,39 @@ for(i in 1:length(lake_sites$field_site_id)) {
   # Get only the necessary data for the specific site
   site_target <- targets_lm |>
     filter(site_id == curr_site)
-
-  noaa_future_site <- noaa_future_daily |> 
+  
+  weather_forecast_site <- weather_forecast_daily |> 
     filter(site_id == curr_site)
   
   #Fit linear model based on past data: water temperature = m * air temperature + b
   #you will need to change the variable on the left side of the ~ if you are forecasting oxygen or chla
   fit <- lm(site_target$temperature ~ site_target$air_temperature)
   # fit <- lm(site_target$temperature ~ ....)
-    
+  
   # Loop through all forecast dates
-  for (t in 1:length(forecast_dates)) {
-  
-  #pull driver ensemble for the relevant date; here we are using all 30 NOAA ensemble members
-  site_drivers <- noaa_future_site %>%
-    filter(datetime == forecast_dates[t])
-  
-  # use linear regression to forecast water temperature for each ensemble member
-  # You will need to modify this line of code if you add additional weather variables or change the form of the model
-  # The model here needs to match the model used in the lm function above (or what model you used in the fit)
-  forecasted_temperature <- fit$coefficients[1] + fit$coefficients[2] * site_drivers$air_temperature
+  for (t in 1:length(forecasted_dates)) {
     
-  # put all the relevant information into a tibble that we can bind together
-  curr_site_df <- tibble(datetime = rep(forecast_dates[t], times = n_members),
-                         site_id = curr_site,
-                         parameter = 1:n_members,
-                         prediction = forecasted_temperature,
-                         variable = "temperature") #Change this if you are forecasting a different variable
-  
-  forecast_df <- dplyr::bind_rows(forecast_df, curr_site_df)
-  
+    #pull driver ensemble for the relevant date; here we are using all 30 NOAA ensemble members
+    temp_driv <- weather_forecast_site %>%
+      filter(datetime == forecasted_dates[t])
+    
+    # use linear regression to forecast water temperature for each ensemble member
+    # You will need to modify this line of code if you add additional weather variables or change the form of the model
+    # The model here needs to match the model used in the lm function above (or what model you used in the fit)
+    forecasted_temperature <- fit$coefficients[1] + fit$coefficients[2] * temp_driv$air_temperature
+    
+    # put all the relevant information into a tibble that we can bind together
+    curr_site_df <- tibble(datetime = rep(forecasted_dates[t], times = n_members),
+                           site_id = curr_site,
+                           parameter = 1:n_members,
+                           prediction = forecasted_temperature,
+                           variable = "temperature") #Change this if you are forecasting a different variable
+    
+    forecast_df <- dplyr::bind_rows(forecast_df, curr_site_df)
+    
   }
   
-  message(curr_site, 'forecast run')
+  message(curr_site, ' forecast run')
 }
 ```
 
@@ -163,9 +163,9 @@ my_model_id <- 'example_ID'
 ```{r make-standard}
 # Make forecast fit the EFI standards
 forecast_df_EFI <- forecast_df %>%
-  filter(datetime > forecast_date) %>%
+  filter(datetime > forecast_start_date) %>%
   mutate(model_id = my_model_id,
-         reference_datetime = forecast_date,
+         reference_datetime = forecast_start_date,
          family = 'ensemble',
          parameter = as.character(parameter)) %>%
   select(datetime, reference_datetime, site_id, family, parameter, variable, prediction, model_id)
@@ -196,8 +196,7 @@ neon4cast::forecast_output_validator(file.path('Forecasts',forecast_file_1))
 
 Change eval = TRUE if you want to submit
 
-```{r submit-forecast, eval= FALSE)}
-
+```{r submit-forecast, eval= FALSE}
 neon4cast::submit(forecast_file = file.path('Forecasts', forecast_file_1), ask = FALSE) # if ask = T (default), it will produce a pop-up box asking if you want to submit
 
 ```
