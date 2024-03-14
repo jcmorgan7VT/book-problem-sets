@@ -1,0 +1,312 @@
+---
+title: "Process model uncertainity"
+format: html
+editor: visual
+---
+
+```{r}
+#| message: FALSE
+library(tidyverse)
+library(lubridate)
+source("https://raw.githubusercontent.com/frec-5174/eco4cast-in-R-book/main/R/helpers.R")
+source("https://raw.githubusercontent.com/frec-5174/eco4cast-in-R-book/main/R/forest_model.R")
+```
+
+This chapter applies the concepts in [Chapter -@sec-under-unc] to the forest process model. If you have not reviewed chapter 5 yet, I recommend doing that as a foundation for this Chapter.
+
+## Setting up simulations
+
+```{r}
+sim_dates <- seq(as_date("2023-11-15"),length.out  = 34, by = "1 day")
+```
+
+```{r}
+site <- "OSBS"
+```
+
+### Baseline parameters
+
+This are the parameters that will be used for all the simulations except for the simulation where parameter uncertainty is propagated
+
+```{r}
+ens_members <- 100
+params <- list()
+params$alpha <- rep(0.02, ens_members)
+params$SLA <- rep(4.74, ens_members)
+params$leaf_frac <- rep(0.315, ens_members)
+params$Ra_frac <- rep(0.5, ens_members)
+params$Rbasal <- rep(0.002, ens_members)
+params$Q10 <- rep(2.1, ens_members)
+params$litterfall_rate <- rep(1/(2.0*365), ens_members) #Two year leaf lifespan
+params$litterfall_start <- rep(200, ens_members)
+params$litterfall_length<- rep(70, ens_members)
+params$mortality <- rep(0.00015, ens_members) #Wood lives about 18 years on average (all trees, branches, roots, course roots)
+params$sigma.leaf <- rep(0.0, ens_members) #0.01 
+params$sigma.stem <- rep(0.0, ens_members) #0.01 ## wood biomass
+params$sigma.soil <- rep(0.0, ens_members)# 0.01
+params <- as.data.frame(params)
+```
+
+### Baseline initial conditions
+
+This are the initial conditions that will be used for all the simulations except for the simulation where initial uncertainty is propagated
+
+```{r}
+#Set initial conditions
+output <- array(NA, dim = c(length(sim_dates), ens_members, 12)) #12 is the number of outputs
+output[1, , 1] <- 5
+output[1, , 2] <- 140
+output[1, , 3] <- 140
+```
+
+### Baseline drivers
+
+This are the drivers conditions that will be used for all the simulations except for the simulation where driver uncertainty is propagated. It uses the mean for the weather forecast ensemble.
+
+```{r}
+inputs <- get_forecast_met(site = site, sim_dates, use_mean = TRUE)
+inputs_ensemble <- assign_met_ensembles(inputs, ens_members)
+```
+
+## Parameter uncertainty
+
+Our model has `r ncol(params)` parameters. Each of them require a value that is likely not known with perfect uncertainty. Representing parameter uncertainty involves replacing the single value for each parameter with a distribution. The distribution can be from literature reviews, a best guess, or the outcome of a calibration exercise. The the calibration exercise is Bayesian the distribution of the parameter before calibration can be refereed to as a prior and after calibration is a posterior. Sampling from the parameter distribution provides values for the parameter that are assigned to each ensemble member.
+
+In many cases a sensitivity analysis can be used to determine which parameters to focus uncertainty estimation on. If a model is not particularly sensitive to parameter then the prediction uncertainty is less likely to be strongly determined by the uncertainty in that parameter. In practices, the values for the less sensitive parameters are held at a single value. Other parameters are so well known that they are also held at a single value (e.g., the gravitation constant).
+
+In this example, I focuses only on propagating one parameter (`alpha`) that represents the light use efficiency of photosynthesis. All other parameters are held at their baseline values.
+
+```{r}
+new_params <- params
+new_params$alpha <- rnorm(ens_members, params$alpha, sd = 0.005)
+```
+
+This results in `alpha` having the following distribution @fig-alpha:
+
+```{r}
+#| echo: false
+#| fig-cap: Histogram showing the distribution of the parameter alpha
+#| label: fig-alpha
+hist(new_params$alpha, main = "", xlab = "alpha")
+```
+
+Use the `new_params` as the parameters in the simulation.
+
+```{r}
+for(t in 2:length(sim_dates)){
+
+  output[t, , ]  <- forest_model(t, 
+                               states = matrix(output[t-1 , , 1:3], nrow = ens_members) , 
+                               parms = new_params, 
+                               inputs = matrix(inputs_ensemble[t ,, ], nrow = ens_members))
+}
+
+parameter_df <- output_to_df(output, sim_dates, sim_name = "parameter_unc")
+
+```
+
+@fig-parameter-unc shows the forecast that only includes parameter uncertainty
+
+```{r}
+#| warning: FALSE
+#| fig-cap: Forecast with parameter uncertainty
+#| label: fig-parameter-unc
+parameter_df |> 
+  filter(variable %in% c("lai", "wood", "som", "nee")) |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            .by = c("datetime", "variable")) |> 
+  ggplot(aes(x = datetime)) +
+  geom_ribbon(aes(ymin = lower90, ymax = upper90), alpha = 0.7) +
+  geom_line(aes(y = median)) +
+  facet_wrap(~variable, scale = "free") +
+  theme_bw()
+```
+
+## Process uncertainty
+
+Process uncertainty is the uncertainty that comes from the model being a simplification of reality. We can use random noise to capture the dynamics that are missing from the model. The random noise is added to each state as end model timestep. The random noise is normally distributed with a mean equal to the model prediction for that time-step and the standard deviation equal to the parameters `sigma.leaf` (or leaves), `sigma.stem` (for wood), and `sigma.soil` (SOM). The result is a random walk that is guided by the mean prediction of the process model.
+
+Process uncertainty can be removed by setting the standard deviations equal to 0. Here we add in process uncertainty by setting the standard deviation to a non-zero value. The standard deviations can be determined using state-space calibration of the ecosystem model. You can learn more about state-space modeling in @dietzeEcologicalForecasting2017
+
+```{r}
+new_params <- params
+new_params$sigma.leaf <- rep(0.1, ens_members)
+new_params$sigma.stem <- rep(1, ens_members) #0.01 ## wood biomass
+new_params$sigma.soil <- rep(1, ens_members)# 0.01
+```
+
+As an example @fig-process-unc shows the distribution in the noise that is added the leaf state at each time step.
+
+```{r}
+#| echo: false
+#| fig-cap: Histogram of the distribution of process uncertainty added to leaf carbon
+#| label: fig-process-unc
+hist(rnorm(ens_members, mean = output[1, , 1], sd = new_params$sigma.leaf), main = " ", xlab = "leaf carbon (Mg/ha)")
+```
+
+```{r}
+
+for(t in 2:length(sim_dates)){
+
+  output[t, , ]  <- forest_model(t, 
+                               states = matrix(output[t-1 , , 1:3], nrow = ens_members) , 
+                               parms = new_params, 
+                               inputs = matrix(inputs_ensemble[t ,, ], nrow = ens_members))
+}
+
+process_df <- output_to_df(output, sim_dates, sim_name = "process_unc")
+
+```
+
+@fig-process-unc2 shows the forecast that only includes process uncertainty
+
+```{r}
+#| warning: FALSE
+#| fig-cap: Forecast with process uncertainty
+#| label: fig-process-unc2
+process_df |> 
+  filter(variable %in% c("lai", "wood", "som", "nee")) |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            .by = c("datetime", "variable")) |> 
+  ggplot(aes(x = datetime)) +
+  geom_ribbon(aes(ymin = lower90, ymax = upper90), alpha = 0.7) +
+  geom_line(aes(y = median)) +
+  facet_wrap(~variable, scale = "free")
+```
+
+## Initial condition uncertainty
+
+Initial condition uncertainty is the spread in the model states at the first time-step of a forecast. This spread would be due to a lack of measurements (thus no direct knowledge of the state) or uncertainty in measurements (there is a spread in the possible states because we can't perfectly observe it.). Here we represent initial condition uncertainty by generating a normal distribution with a mean equal to the observed value (or our best guess) and a standard deviation that represents measurement uncertainty. We update the initial starting point in the forecast with this distribution.
+
+```{r}
+#Set initial conditions
+new_output <- array(NA, dim = c(length(sim_dates), ens_members, 12)) #12 is the number of outputs
+new_output[1, , 1] <- rnorm(ens_members, 5, 0.5)
+new_output[1, , 2] <- rnorm(ens_members, 140, 10)
+new_output[1, , 3] <- rnorm(ens_members, 140, 20)
+```
+
+As an example @fig-init-unc shows the distribution in the noise that is added the initial leaf state.
+
+```{r}
+#| echo: false
+#| label: fig-init-unc
+#| fig-cap: Distribution of intial condition uncertainty for leaf carbon (Mg/ha)
+hist(new_output[1, , 1], main = " ", xlab = "leaf carbon initial condition (Mg/ha)")
+```
+
+```{r}
+for(t in 2:length(sim_dates)){
+
+  new_output[t, , ]  <- forest_model(t, 
+                               states = matrix(new_output[t-1 , , 1:3], nrow = ens_members) , 
+                               parms = params, 
+                               inputs = matrix(inputs_ensemble[t ,, ], nrow = ens_members))
+}
+
+initial_conditions_df <- output_to_df(new_output, sim_dates, sim_name = "initial_unc")
+
+```
+
+@fig-init-unc2 shows the forecast that only includes initial condition uncertainty
+
+```{r}
+#| warning: FALSE
+#| fig-cap: Forecast with initial condition uncertainty
+#| label: fig-init-unc2
+initial_conditions_df |> 
+  filter(variable %in% c("lai", "wood", "som", "nee")) |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            .by = c("datetime", "variable")) |> 
+  ggplot(aes(x = datetime)) +
+  geom_ribbon(aes(ymin = lower90, ymax = upper90), alpha = 0.7) +
+  geom_line(aes(y = median)) +
+  facet_wrap(~variable, scale = "free")  +
+  theme_bw()
+```
+
+## Driver uncertainty
+
+The uncertainty in the weather forecasts comes directly from the 31 ensembles provided by the NOAA Global Ensemble Forecasting System (GEFS). The ensemble is generated by slightly changing (perturbing) the initial states in the weather model before starting the forecast. Due to the chaotic nature of the atmosphere, the small differences get amplified over time, resulting in spread that increases further in the future.
+
+```{r}
+new_inputs <- get_forecast_met(site = site, sim_dates, use_mean = FALSE)
+new_inputs_ensemble <- assign_met_ensembles(new_inputs, ens_members)
+```
+
+As an example @fig-driver-unc shows 31 ensemble members from single 35-day forecast generated by NOAA GEFS.
+
+```{r}
+#| echo: false
+#| label: fig-driver-unc
+#| fig-cap: 35-day ahead forecasts from NOAA GEFS  of the two variables using by the process model. 
+ggplot(new_inputs, aes(x = datetime, y = prediction, group = parameter)) +
+  geom_line() +
+  facet_wrap(~variable, scales = "free")  +
+  theme_bw()
+```
+
+```{r}
+
+for(t in 2:length(sim_dates)){
+
+  output[t, , ]  <- forest_model(t, 
+                               states = matrix(output[t-1 , , 1:3], nrow = ens_members) , 
+                               parms = params, 
+                               inputs = matrix(new_inputs_ensemble[t ,, ], nrow = ens_members))
+}
+
+drivers_df <- output_to_df(output, sim_dates, sim_name = "driver_unc")
+
+```
+
+@fig-driver-unc2 shows the forecast that only includes driver uncertainty
+
+```{r}
+#| warning: FALSE
+#| fig-cap: Forecast with driver uncertainty
+#| label: fig-driver-unc2
+drivers_df |> 
+  filter(variable %in% c("lai", "wood", "som", "nee")) |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            .by = c("datetime", "variable")) |> 
+  ggplot(aes(x = datetime)) +
+  geom_ribbon(aes(ymin = lower90, ymax = upper90), alpha = 0.7) +
+  geom_line(aes(y = median)) +
+  facet_wrap(~variable, scale = "free") +
+  theme_bw()
+```
+
+## Problem Set
+
+### Part 1
+
+Using a dataset that combines each of the uncertainty dataframes into a single data frame:
+
+```{r}
+combined_df <- bind_rows(parameter_df, process_df, initial_conditions_df, drivers_df)
+```
+
+Answer with text, code, and plots the following questions
+
+1)  1 day-ahead, what the largest source of uncertainty for a flux (nee)? for a state (wood)?
+2)  10 days-ahead, what is the largest source of uncertainty for a flux (nee)? for a state (wood)?
+3)  30 days-ahead, what is the largest source of uncertainty for a flux (nee)? for a state (wood)?
+
+### Part 2
+
+Using the code above as a guide, create code to estimate uncertainty based on the propagation all sources at the same time (unlike the one-at-a-time approach above).
+
+Answer with text, code, and plots the following questions
+
+-   Plot the forecast with the combined uncertainty.
+
+-   If you calculate the variance of the combined uncertainty and compared to the sum of the individual variances, do they match? What does it mean if they are different?
