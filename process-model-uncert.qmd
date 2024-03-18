@@ -4,7 +4,9 @@ format: html
 editor: visual
 ---
 
-Test
+John Morgan
+3/18/24
+
 ```{r}
 #| message: FALSE
 library(tidyverse)
@@ -294,13 +296,105 @@ Using a dataset that combines each of the uncertainty dataframes into a single d
 
 ```{r}
 combined_df <- bind_rows(parameter_df, process_df, initial_conditions_df, drivers_df)
+combined_df$datetime <- ymd(combined_df$datetime)
 ```
 
 Answer with text, code, and plots the following questions
 
 1)  1 day-ahead, what the largest source of uncertainty for a flux (nee)? for a state (wood)?
+```{r}
+plot_partitioned_uc_highlight <- function(sd_df, x){
+  #cols2 <- ggthemes::ggthemes_data$colorblind$value # Set another custom plot color palette
+  
+  ggplot() +
+    geom_bar(data = sd_df, aes(x = horizon, y = total_unc, fill = model_id), 
+             stat = "identity", position = "stack") +
+  geom_bar(data = filter(sd_df, horizon != x), 
+           aes(x = horizon, y = total_unc, fill = model_id), 
+           stat = "identity", position = "stack",
+           fill = "grey")+
+    ylab("Uncertainty contributed") +
+    xlab("Forecast Horizon (days)") +
+    # scale_fill_manual(values = c("process" = cols2[1], "parameter" = cols2[2], "initial_conditions" = cols2[3],
+    #                              "driver" = cols2[4])) +
+    #scale_x_date(date_breaks = "1 day", date_labels = "%b %d") +
+    labs(fill = "Source of Uncertainty",
+         title = paste0(x," days-ahead uncertainty highlighted")) +
+    theme_bw(base_size = 12)
+}
+
+plot_partitioned_uc <- function(sd_df){
+  #cols2 <- ggthemes::ggthemes_data$colorblind$value # Set another custom plot color palette
+  
+  ggplot() +
+    geom_bar(data = sd_df, aes(x = horizon, y = total_unc, fill = model_id), 
+             stat = "identity", position = "stack") +
+    ylab("Uncertainty contributed") +
+    xlab("Forecast Horizon (days)") +
+    # scale_fill_manual(values = c("process" = cols2[1], "parameter" = cols2[2], "initial_conditions" = cols2[3],
+    #                              "driver" = cols2[4])) +
+    #scale_x_date(date_breaks = "1 day", date_labels = "%b %d") +
+    labs(fill = "Source of Uncertainty") +
+    theme_bw(base_size = 12)
+}
+
+
+combined_df |> 
+  filter(variable == "wood" | variable == "nee") |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            total_unc = upper90 - lower90,
+            .by = c("datetime", "model_id", "variable")) |> 
+  mutate(horizon = as.numeric(datetime - ymd("2023-11-15"))) |> 
+  plot_partitioned_uc()+
+  facet_wrap(~variable, scales = "free_y")
+
+
+combined_df |> 
+  filter(variable == "wood" | variable == "nee") |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            total_unc = upper90 - lower90,
+            .by = c("datetime", "model_id", "variable")) |> 
+  mutate(horizon = as.numeric(datetime - ymd("2023-11-15"))) |> 
+  plot_partitioned_uc_highlight(x = 1)+
+  facet_wrap(~variable, scales = "free_y")
+
+```
+  Answer: The largest source of uncertainty 1 day ahead for a flux is driver uncertainty by a narrow margin, and for a state it is initial condition uncertainty.
+  
 2)  10 days-ahead, what is the largest source of uncertainty for a flux (nee)? for a state (wood)?
+```{r}
+combined_df |> 
+  filter(variable == "wood" | variable == "nee") |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            total_unc = upper90 - lower90,
+            .by = c("datetime", "model_id", "variable")) |> 
+  mutate(horizon = as.numeric(datetime - ymd("2023-11-15"))) |> 
+  plot_partitioned_uc_highlight(x = 10)+
+  facet_wrap(~variable, scales = "free_y")
+```
+
+  Answer: 10 days-ahead, the largest source of uncertainty for a flux is driver uncertainty, and for a state initial condition uncertainty.
+  
 3)  30 days-ahead, what is the largest source of uncertainty for a flux (nee)? for a state (wood)?
+```{r}
+combined_df |> 
+  filter(variable == "wood" | variable == "nee") |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            total_unc = upper90 - lower90,
+            .by = c("datetime", "model_id", "variable")) |> 
+  mutate(horizon = as.numeric(datetime - ymd("2023-11-15"))) |> 
+  plot_partitioned_uc_highlight(x = 30)+
+  facet_wrap(~variable, scales = "free_y")
+```
+  Answer: 30 days-ahead, the greatest source of uncertainty for a flux is driver uncertainty, and the greatest source of uncertainty for a state is initial condition uncertainty.
 
 ### Part 2
 
