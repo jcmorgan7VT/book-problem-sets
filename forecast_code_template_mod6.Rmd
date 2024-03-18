@@ -3,6 +3,8 @@ title: "NEON forecast challenge submission"
 output: html_document
 date: "`r Sys.Date()`"
 ---
+John Morgan
+3/18/24
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
