@@ -4,8 +4,8 @@ format: html
 editor: visual
 ---
 
-John Morgan
-3/18/24
+John Morgan  
+3/18/24  
 
 ```{r}
 #| message: FALSE
@@ -303,6 +303,7 @@ Answer with text, code, and plots the following questions
 
 1)  1 day-ahead, what the largest source of uncertainty for a flux (nee)? for a state (wood)?
 ```{r}
+#functions to plot histograms
 plot_partitioned_uc_highlight <- function(sd_df, x){
   #cols2 <- ggthemes::ggthemes_data$colorblind$value # Set another custom plot color palette
   
@@ -337,8 +338,12 @@ plot_partitioned_uc <- function(sd_df){
     labs(fill = "Source of Uncertainty") +
     theme_bw(base_size = 12)
 }
+```
 
-
+```{r}
+#| warning: FALSE
+#| fig-cap: Uncertainty contributed by each source
+#| label: fig-all-unc-ind
 combined_df |> 
   filter(variable == "wood" | variable == "nee") |> 
   summarise(median = median(prediction, na.rm = TRUE), 
@@ -350,7 +355,12 @@ combined_df |>
   plot_partitioned_uc()+
   facet_wrap(~variable, scales = "free_y")
 
+```
 
+```{r}
+#| warning: FALSE
+#| fig-cap: 1 day ahead uncertainty highlighted
+#| label: fig-1-day-unc
 combined_df |> 
   filter(variable == "wood" | variable == "nee") |> 
   summarise(median = median(prediction, na.rm = TRUE), 
@@ -361,12 +371,15 @@ combined_df |>
   mutate(horizon = as.numeric(datetime - ymd("2023-11-15"))) |> 
   plot_partitioned_uc_highlight(x = 1)+
   facet_wrap(~variable, scales = "free_y")
-
 ```
+
   Answer: The largest source of uncertainty 1 day ahead for a flux is driver uncertainty by a narrow margin, and for a state it is initial condition uncertainty.
   
 2)  10 days-ahead, what is the largest source of uncertainty for a flux (nee)? for a state (wood)?
 ```{r}
+#| warning: FALSE
+#| fig-cap: 10 day ahead uncertainty highlighted
+#| label: fig-10-day-unc
 combined_df |> 
   filter(variable == "wood" | variable == "nee") |> 
   summarise(median = median(prediction, na.rm = TRUE), 
@@ -383,6 +396,9 @@ combined_df |>
   
 3)  30 days-ahead, what is the largest source of uncertainty for a flux (nee)? for a state (wood)?
 ```{r}
+#| warning: FALSE
+#| fig-cap: 30 day ahead uncertainty highlighted
+#| label: fig-30-day-unc
 combined_df |> 
   filter(variable == "wood" | variable == "nee") |> 
   summarise(median = median(prediction, na.rm = TRUE), 
@@ -447,6 +463,10 @@ all_unc_df |>
 
 -   If you calculate the variance of the combined uncertainty and compared to the sum of the individual variances, do they match? What does it mean if they are different?
 ```{r}
+#| warning: FALSE
+#| fig-cap: Comparing combined uncertainty with all uncertainty
+#| label: fig-all-unc-bar
+
 #calculate variance- I will just subtract upper 90 by lower 90
 df1 <- all_unc_df |> 
   filter(variable %in% c("wood", "nee")) |> 
@@ -469,6 +489,7 @@ df2 <- combined_df |>
             .by = c("datetime", "model_id", "variable")) |> 
   mutate(horizon = as.numeric(datetime - ymd("2023-11-15")),
            df = "individual variance")
+
 
 bind_rows(df1, df2) |> 
   plot_partitioned_uc()+
