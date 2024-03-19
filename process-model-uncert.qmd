@@ -308,13 +308,13 @@ plot_partitioned_uc_highlight <- function(sd_df, x){
   #cols2 <- ggthemes::ggthemes_data$colorblind$value # Set another custom plot color palette
   
   ggplot() +
-    geom_bar(data = sd_df, aes(x = horizon, y = total_unc, fill = model_id), 
+    geom_bar(data = sd_df, aes(x = horizon, y = variance, fill = model_id), 
              stat = "identity", position = "stack") +
   geom_bar(data = filter(sd_df, horizon != x), 
-           aes(x = horizon, y = total_unc, fill = model_id), 
+           aes(x = horizon, y = variance, fill = model_id), 
            stat = "identity", position = "stack",
            fill = "grey")+
-    ylab("Uncertainty contributed (units of state or flux)") +
+    ylab("Variance (MgC/ha/day^2 or MgC/ha^2)") +
     xlab("Forecast Horizon (days)") +
     # scale_fill_manual(values = c("process" = cols2[1], "parameter" = cols2[2], "initial_conditions" = cols2[3],
     #                              "driver" = cols2[4])) +
@@ -328,9 +328,9 @@ plot_partitioned_uc <- function(sd_df){
   #cols2 <- ggthemes::ggthemes_data$colorblind$value # Set another custom plot color palette
   
   ggplot() +
-    geom_bar(data = sd_df, aes(x = horizon, y = total_unc, fill = model_id), 
+    geom_bar(data = sd_df, aes(x = horizon, y = variance, fill = model_id), 
              stat = "identity", position = "stack") +
-    ylab("Uncertainty contributed (units of state or flux)") +
+    ylab("Variance (MgC/ha/day^2 or MgC/ha^2)") +
     xlab("Forecast Horizon (days)") +
     # scale_fill_manual(values = c("process" = cols2[1], "parameter" = cols2[2], "initial_conditions" = cols2[3],
     #                              "driver" = cols2[4])) +
@@ -349,7 +349,7 @@ combined_df |>
   summarise(median = median(prediction, na.rm = TRUE), 
             upper90 = quantile(prediction, 0.95, na.rm = TRUE),
             lower90 = quantile(prediction, 0.05, na.rm = TRUE),
-            total_unc = upper90 - lower90,
+            variance = var(prediction),
             .by = c("datetime", "model_id", "variable")) |> 
   mutate(horizon = as.numeric(datetime - ymd("2023-11-15"))) |> 
   plot_partitioned_uc()+
@@ -366,14 +366,14 @@ combined_df |>
   summarise(median = median(prediction, na.rm = TRUE), 
             upper90 = quantile(prediction, 0.95, na.rm = TRUE),
             lower90 = quantile(prediction, 0.05, na.rm = TRUE),
-            total_unc = upper90 - lower90,
+            variance = var(prediction),
             .by = c("datetime", "model_id", "variable")) |> 
   mutate(horizon = as.numeric(datetime - ymd("2023-11-15"))) |> 
   plot_partitioned_uc_highlight(x = 1)+
   facet_wrap(~variable, scales = "free_y")
 ```
 
-  Answer: The largest source of uncertainty 1 day ahead for a flux is driver uncertainty by a narrow margin, and for a state it is initial condition uncertainty.
+  Answer: The largest source of variance 1 day ahead for a flux is driver uncertainty, and for a state it is initial condition uncertainty.
   
 2)  10 days-ahead, what is the largest source of uncertainty for a flux (nee)? for a state (wood)?
 ```{r}
@@ -385,7 +385,7 @@ combined_df |>
   summarise(median = median(prediction, na.rm = TRUE), 
             upper90 = quantile(prediction, 0.95, na.rm = TRUE),
             lower90 = quantile(prediction, 0.05, na.rm = TRUE),
-            total_unc = upper90 - lower90,
+            variance = var(prediction),
             .by = c("datetime", "model_id", "variable")) |> 
   mutate(horizon = as.numeric(datetime - ymd("2023-11-15"))) |> 
   plot_partitioned_uc_highlight(x = 10)+
@@ -404,7 +404,7 @@ combined_df |>
   summarise(median = median(prediction, na.rm = TRUE), 
             upper90 = quantile(prediction, 0.95, na.rm = TRUE),
             lower90 = quantile(prediction, 0.05, na.rm = TRUE),
-            total_unc = upper90 - lower90,
+            variance = var(prediction),
             .by = c("datetime", "model_id", "variable")) |> 
   mutate(horizon = as.numeric(datetime - ymd("2023-11-15"))) |> 
   plot_partitioned_uc_highlight(x = 30)+
@@ -473,7 +473,7 @@ df1 <- all_unc_df |>
   summarise(median = median(prediction, na.rm = TRUE), 
             upper90 = quantile(prediction, 0.95, na.rm = TRUE),
             lower90 = quantile(prediction, 0.05, na.rm = TRUE),
-            total_unc = upper90 - lower90,
+            variance = var(prediction),
             .by = c("datetime", "model_id", "variable")) |> 
     mutate(horizon = as.numeric(datetime - ymd("2023-11-15")),
            df = "combined variance")  
@@ -485,7 +485,7 @@ df2 <- combined_df |>
   summarise(median = median(prediction, na.rm = TRUE), 
             upper90 = quantile(prediction, 0.95, na.rm = TRUE),
             lower90 = quantile(prediction, 0.05, na.rm = TRUE),
-            total_unc = upper90 - lower90,
+            variance = var(prediction),
             .by = c("datetime", "model_id", "variable")) |> 
   mutate(horizon = as.numeric(datetime - ymd("2023-11-15")),
            df = "individual variance")
@@ -496,5 +496,12 @@ bind_rows(df1, df2) |>
   facet_wrap(df~variable, scales = "free_y")
 ```
   
+```{r}
+#subtract the difference
+bind_cols(df1, df2) #|> 
+  plot_partitioned_uc()+
+  facet_wrap(df~variable, scales = "free_y")
+```
+
 For both fluxes and states, the individually incorporated uncertainty results in a higher variance in forecast predictions, while combining the uncertainty before running the forecast results in lower uncertainty, especially as the forecast horizon increases. This is a process model, and the combined uncertainty probably results in the components of the model calculated iteratively through time cancelling each other out, or not resulting in a model that continues in one direction, or continues to get more uncertain as time progresses. This can also be seen in the ribbon graphs for each of the sources of uncertainty- generally, at the latter end of the forecast horizon, the uncertainty is very high. For the ribbon plot for all sources of uncertainty combined, the uncertainty is high throughout the forecast, resulting in relatively even uncertainty throughout the whole horizon. I think this is a result of how the process model is set up.
   
