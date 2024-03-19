@@ -313,7 +313,7 @@ plot_partitioned_uc_highlight <- function(sd_df, x){
            aes(x = horizon, y = total_unc, fill = model_id), 
            stat = "identity", position = "stack",
            fill = "grey")+
-    ylab("Uncertainty contributed") +
+    ylab("Uncertainty contributed (units of state or flux)") +
     xlab("Forecast Horizon (days)") +
     # scale_fill_manual(values = c("process" = cols2[1], "parameter" = cols2[2], "initial_conditions" = cols2[3],
     #                              "driver" = cols2[4])) +
@@ -329,7 +329,7 @@ plot_partitioned_uc <- function(sd_df){
   ggplot() +
     geom_bar(data = sd_df, aes(x = horizon, y = total_unc, fill = model_id), 
              stat = "identity", position = "stack") +
-    ylab("Uncertainty contributed") +
+    ylab("Uncertainty contributed (units of state or flux)") +
     xlab("Forecast Horizon (days)") +
     # scale_fill_manual(values = c("process" = cols2[1], "parameter" = cols2[2], "initial_conditions" = cols2[3],
     #                              "driver" = cols2[4])) +
@@ -400,8 +400,80 @@ combined_df |>
 
 Using the code above as a guide, create code to estimate uncertainty based on the propagation all sources at the same time (unlike the one-at-a-time approach above).
 
+```{r}
+#combine all sources of uncertainty when forecasting
+#create new params with parameter uncertainty and process uncertainty
+new_params <- params
+new_params$alpha <- rnorm(ens_members, params$alpha, sd = 0.005)
+new_params$sigma.leaf <- rep(0.1, ens_members)
+new_params$sigma.stem <- rep(1, ens_members) #0.01 ## wood biomass
+new_params$sigma.soil <- rep(1, ens_members)# 0.01
+
+#run forecast with all sources incorporated from above
+for(t in 2:length(sim_dates)){
+
+  new_output[t, , ]  <- forest_model(t, 
+                               #initial condition uncertainty
+                               states = matrix(new_output[t-1 , , 1:3], nrow = ens_members) ,
+                               #parameter uncertainty and process uncertainty
+                               parms = new_params,
+                               #driver uncertainty
+                               inputs = matrix(new_inputs_ensemble[t ,, ], nrow = ens_members))
+}
+
+
+all_unc_df <- output_to_df(new_output, sim_dates, sim_name = "all_unc")
+```
+
 Answer with text, code, and plots the following questions
 
 -   Plot the forecast with the combined uncertainty.
+```{r}
+#| warning: FALSE
+#| fig-cap: Forecast with all sources of uncertainty
+#| label: fig-all-unc
+all_unc_df |> 
+  filter(variable %in% c("lai", "wood", "som", "nee")) |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            .by = c("datetime", "variable")) |> 
+  ggplot(aes(x = datetime)) +
+  geom_ribbon(aes(ymin = lower90, ymax = upper90), alpha = 0.7) +
+  geom_line(aes(y = median)) +
+  facet_wrap(~variable, scale = "free") +
+  theme_bw()
+```
 
 -   If you calculate the variance of the combined uncertainty and compared to the sum of the individual variances, do they match? What does it mean if they are different?
+```{r}
+#calculate variance- I will just subtract upper 90 by lower 90
+df1 <- all_unc_df |> 
+  filter(variable %in% c("wood", "nee")) |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            total_unc = upper90 - lower90,
+            .by = c("datetime", "model_id", "variable")) |> 
+    mutate(horizon = as.numeric(datetime - ymd("2023-11-15")),
+           df = "combined variance")  
+  #plot_partitioned_uc()+
+  #facet_wrap(~variable, scales = "free_y")
+
+df2 <- combined_df |> 
+  filter(variable == "wood" | variable == "nee") |> 
+  summarise(median = median(prediction, na.rm = TRUE), 
+            upper90 = quantile(prediction, 0.95, na.rm = TRUE),
+            lower90 = quantile(prediction, 0.05, na.rm = TRUE),
+            total_unc = upper90 - lower90,
+            .by = c("datetime", "model_id", "variable")) |> 
+  mutate(horizon = as.numeric(datetime - ymd("2023-11-15")),
+           df = "individual variance")
+
+bind_rows(df1, df2) |> 
+  plot_partitioned_uc()+
+  facet_wrap(df~variable, scales = "free_y")
+```
+  
+For both fluxes and states, the individually incorporated uncertainty results in a higher variance in forecast predictions, while combining the uncertainty before running the forecast results in lower uncertainty, especially as the forecast horizon increases. This is a process model, and the combined uncertainty probably results in the components of the model calculated iteratively through time cancelling each other out, or not resulting in a model that continues in one direction, or continues to get more uncertain as time progresses. This can also be seen in the ribbon graphs for each of the sources of uncertainty- generally, at the latter end of the forecast horizon, the uncertainty is very high. For the ribbon plot for all sources of uncertainty combined, the uncertainty is high throughout the forecast, resulting in relatively even uncertainty throughout the whole horizon. I think this is a result of how the process model is set up.
+  
