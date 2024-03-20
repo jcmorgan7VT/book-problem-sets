@@ -467,7 +467,7 @@ all_unc_df |>
 #| fig-cap: Comparing combined uncertainty with all uncertainty
 #| label: fig-all-unc-bar
 
-#calculate variance- I will just subtract upper 90 by lower 90
+#calculate variance
 df1 <- all_unc_df |> 
   filter(variable %in% c("wood", "nee")) |> 
   summarise(median = median(prediction, na.rm = TRUE), 
@@ -496,12 +496,5 @@ bind_rows(df1, df2) |>
   facet_wrap(df~variable, scales = "free_y")
 ```
   
-```{r}
-#subtract the difference
-bind_cols(df1, df2) #|> 
-  plot_partitioned_uc()+
-  facet_wrap(df~variable, scales = "free_y")
-```
-
-For both fluxes and states, the individually incorporated uncertainty results in a higher variance in forecast predictions, while combining the uncertainty before running the forecast results in lower uncertainty, especially as the forecast horizon increases. This is a process model, and the combined uncertainty probably results in the components of the model calculated iteratively through time cancelling each other out, or not resulting in a model that continues in one direction, or continues to get more uncertain as time progresses. This can also be seen in the ribbon graphs for each of the sources of uncertainty- generally, at the latter end of the forecast horizon, the uncertainty is very high. For the ribbon plot for all sources of uncertainty combined, the uncertainty is high throughout the forecast, resulting in relatively even uncertainty throughout the whole horizon. I think this is a result of how the process model is set up.
+For both fluxes and states, the individually incorporated uncertainty results in a lower variance in forecast predictions, while combining the uncertainty before running the forecast results in higher variance, especially as the forecast horizon increases. They do not match, and this shows that when incorporating uncertainty it is important to do it all at once. Doing it all individually and then adding it may not capture how the different sources of uncertainty propagate in the model, and end up amplifying each others influence.
   
