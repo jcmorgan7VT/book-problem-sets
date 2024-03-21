@@ -1,6 +1,8 @@
 ---
 title: "Process model uncertainity"
-format: html
+format: 
+  html: 
+    embed-resources: true
 editor: visual
 ---
 
@@ -34,12 +36,12 @@ This are the parameters that will be used for all the simulations except for the
 ```{r}
 ens_members <- 100
 params <- list()
-params$alpha <- rep(0.02, ens_members)
-params$SLA <- rep(4.74, ens_members)
+params$alpha <- rep(0.02, ens_members) #light use efficiency, governs 
+params$SLA <- rep(4.74, ens_members) #specific leaf area
 params$leaf_frac <- rep(0.315, ens_members)
 params$Ra_frac <- rep(0.5, ens_members)
-params$Rbasal <- rep(0.002, ens_members)
-params$Q10 <- rep(2.1, ens_members)
+params$Rbasal <- rep(0.002, ens_members) #baseline respiration rate of the soil
+params$Q10 <- rep(2.1, ens_members) #sensitivity
 params$litterfall_rate <- rep(1/(2.0*365), ens_members) #Two year leaf lifespan
 params$litterfall_start <- rep(200, ens_members)
 params$litterfall_length<- rep(70, ens_members)
