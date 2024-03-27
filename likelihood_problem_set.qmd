@@ -1,6 +1,8 @@
 ---
 title: "Parameter calibration: likelihood methods"
-format: html
+format: 
+  html: 
+    embed-resources: true
 editor: visual
 ---
 
@@ -38,29 +40,43 @@ bart_2019 <- d  %>%
 **Answer 1:**
 
 ```{r}
-#Add Answer
+#plot gcc_90 by day of year
+#gcc = green chromatograph, greeness, green band normalizaed by red band and brightness
+bart_2019 |> 
+  ggplot()+
+  geom_line(aes(x = doy, y = observation))
 ```
 
+As the day of year (doy) increases, the gcc_90 stays relatively flat until a certain day, and then it rapidly increases, then stays flay but with less stabililty for the rest of the year.
+  
 **Question 2:** Use a histogram to examine the distribution of the gcc_90
 
 **Answer 2:**
 
 ```{r}
 #Add Answer
+bart_2019 |> 
+  ggplot()+
+  geom_histogram(aes(x = observation))
 ```
-
-First create a function called \`pred_logistic' that is your process model. The model is the the logistic curve which ish the equation $$P_1 + P_2 {{exp(P_3 + P_4 x)}\over{1+exp(P_3 + P_4 x)}}$$
+gcc_90 is not normally distributed, and might be better described using a different probability distribution.
+  
+First create a function called \`pred_logistic' that is your process model. The model is the the logistic curve which is the equation $$P_1 + P_2 {{exp(P_3 + P_4 x)}\over{1+exp(P_3 + P_4 x)}}$$
 
 **Question 3:** Is this process model a dynamic model? Why or why not?
 
 **Answer 3:**
-
+This model is not a dynamic model, because it does not rely upon the previous states.
+  
 **Question 4:** Based on the equation above, write a function that predicts the gcc_90 as a function of the parameters ($P$) and x where x is the DOY. Name that function `pred_logistic`.
 
 **Answer 4:**
 
 ```{r}
 #Add Answer
+pred_logistic <- function(x, par){
+  par[1] + par[2] * exp(par[3] + par[4] * x)/(1 + exp(par[3] + par[4] * x))
+}
 ```
 
 **Question 5:** Write a function that calculates the negative log-likelihood of the data given a set of parameters governing the process and data models. Assume a normal distribution and be sure to estimate the sd in the data model.
@@ -69,6 +85,9 @@ First create a function called \`pred_logistic' that is your process model. The 
 
 ```{r}
 #Add Answer
+LL_fn <- function(x, y, par){
+  -sum(dnorm(y, mean = pred_logistic(x, par), sd = par[5], log = TRUE))
+}
 ```
 
 **Question 6:** Use the `optim` function to find the most likely parameter values. Use the following as starting values `par = c(0.34,0.11,-15,0.11, 1)` where the first four are the theta parameters from your process model and the fifth is the sd of your data model.
@@ -77,6 +96,16 @@ First create a function called \`pred_logistic' that is your process model. The 
 
 ```{r}
 #Add Answer
+#x <- bart_2019$doy
+#y <- bart_2019$observation
+fit <- optim(par = c(0.34,0.11,-15,0.11, 1), fn = LL_fn, method = "BFGS", x = bart_2019$doy, y = bart_2019$observation)
+
+```
+
+```{r}
+ggplot()+
+  geom_point(data = bart_2019, aes(x = doy, y = observation))+
+  geom_line(aes(x = bart_2019$doy, y = pred_logistic(x = bart_2019$doy, par = fit$par)))
 ```
 
 **Question 7:** Use your optimal parameters in the `pred_logistic` function to predict the data. Save this as the object `predicted`
@@ -147,6 +176,3 @@ Use maximum likelihood to estimate the parameters in the model that predicts the
 $$\theta_1 * \theta_2 ^{{(T - 20)}\over{10}}$$
 
 Show all the steps to determine the most likely parameter values, report the parameter values, and plot the data and predictions on the same plot
-
-
-
