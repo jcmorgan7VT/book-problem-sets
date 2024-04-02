@@ -114,6 +114,7 @@ ggplot()+
 
 ```{r}
 #Add Answer
+predicted <- pred_logistic(x = bart_2019$doy, par = fit$par)
 ```
 
 **Question 8:** Calculate the residuals and plot a histogram of the residuals
@@ -122,16 +123,30 @@ ggplot()+
 
 ```{r}
 #Add Answer
+residuals <- bart_2019$observation - predicted
+hist(residuals)
 ```
 
 **Question 9:** How does the distribution of the data (Question 2) compare to the distribution of the residuals?
 
 **Answer 9:**
+The distribution of the data is extremely skewed with some outliers to the right, but the distribution of the residuals could be described by a normal distribution.
 
 **Question 10:** Predict year 2020 using the process model parameters from the 2019 fit.
 
 ```{r}
 #Add Answer
+bart_2020 <- d  %>%
+  filter(site_id == "BART",
+         datetime > as_date("2020-01-01"),
+         datetime < as_date("2020-07-01"),
+         variable == "gcc_90") %>%
+  mutate(doy = yday(datetime)) %>% 
+  filter(!is.na(observation),
+         observation > 0)
+
+predicted <- pred_logistic(x = bart_2020$doy, par = fit$par)
+
 ```
 
 **Answer 10:**
@@ -141,19 +156,18 @@ ggplot()+
 **Answer 11:**
 
 ```{r}
-bart_2020 <- d  %>%
-  filter(site_id == "BART",
-         datetime > as_date("2020-01-01"),
-         datetime < as_date("2020-07-01"),
-         variable == "gcc_90") %>%
-  mutate(doy = yday(datetime)) %>% 
-  filter(!is.na(observation),
-         observation > 0)
+
+ggplot()+
+  geom_point(data = bart_2020, aes(x = doy, y = observation))+
+  geom_line(aes(x = bart_2020$doy, y = pred_logistic(x = bart_2020$doy, par = fit$par)))
+
 ```
 
 **Question 12:** Do you think your model from 2019 is reasonable for predicting 2020?
 
 **Answer 12:**
+
+The model for 2019 seems to work very well for 2020 as well.
 
 ### Part 2 {#sec-q10}
 
@@ -176,3 +190,31 @@ Use maximum likelihood to estimate the parameters in the model that predicts the
 $$\theta_1 * \theta_2 ^{{(T - 20)}\over{10}}$$
 
 Show all the steps to determine the most likely parameter values, report the parameter values, and plot the data and predictions on the same plot
+
+```{r}
+#look at data
+ggplot(df) +
+  geom_point(aes(x = soil_temp, y = soil_resp))
+#define my q10 function
+#x = soil_temp
+#y = soil_resp
+pred_q10 <- function(x, par){
+  par[1] * par[2]^((x-20)/10)
+}
+
+#log likelihood function
+LL_fn <- function(x, y, par){
+  -sum(dnorm(y, mean = pred_q10(x, par), sd = par[3], log = TRUE))
+}
+#find most likely fit with optim
+#starting with all params as 1
+fit <- optim(par = c(1, 1, 1), fn = LL_fn, method = "BFGS", x = df$soil_temp, y = df$soil_resp)
+#output parameter values
+fit
+
+#fit  plotted with actual data
+ggplot(df) +
+  geom_point(aes(x = doy, y = soil_resp))+
+  geom_line(aes(x = doy, y = pred_q10(x = df$soil_temp, par = fit$par)))
+```
+
