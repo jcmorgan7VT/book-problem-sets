@@ -61,14 +61,14 @@ ggplot(plot_data, aes(x = datetime, y = biomass)) +
 The following model was used to estimate the posterior distributions of the parameters using a Bayesian framework.
 
 ```         
-sim_dates <- seq(as_date("1950-01-01"), length.out = 50, by = "1 year)
+sim_dates <- seq(as_date("1950-01-01"), length.out = 50, by = "1 year")
 biomass[1, ] <- 0
 
 for(t in 2:length(sim_dates)){
 
   for(i in 1:num_particles){
 
-    biomass_predicted <- biomass[t+1, i] + param$g - param$u
+    biomass_predicted <- biomass[t+1, i] + param$g - param$u * biomass[t-1, i]
 
     biomass[t, i] <- rnorm(1, mean = biomass_predicted , sd = param$sd_add)
   }
@@ -101,6 +101,8 @@ Be sure to:
 
 ```{r}
 #ADD CODE TO SET UP PF HERE
+obs <- NULL
+
 ```
 
 #### Step 2: Run particle filter
@@ -108,7 +110,69 @@ Be sure to:
 Write the code and run the particle filter based on the examples from the lecture. You will need to include the process model that is in the NIMBLE code above.
 
 ```{r}
-#ADD PF CODE HERE
+#sequential method from above
+sim_dates <- seq(as_date("1950-01-01"), length.out = 50, by = "1 year")
+num_particles <- 100
+
+biomass <- array(NA, dim = c(length(sim_dates), num_particles))
+biomass[1, ] <- 0
+
+for(t in 2:length(sim_dates)){
+
+  for(i in 1:num_particles){
+
+    biomass_predicted <- biomass[t-1, i] + param$g - param$u * biomass[t-1, i]
+
+    biomass[t, i] <- rnorm(1, mean = biomass_predicted , sd = param$sd_add)
+  }
+}
+
+num_particles <- 25
+
+future_dates <- seq(as_date("2000-01-01"), length.out = 20, by = "1 year")
+biomass <- array(NA, dim = c(length(sim_dates), num_particles))
+
+####particle filter from lecture
+
+num_time_steps <- length(future_dates)
+
+#This sets all the observations to NA after the first
+biomass[1, ] <- 6000
+
+
+sd_data <- 200
+
+x <- array(NA, dim = c(num_time_steps, num_particles))
+x[1, ] <- rnorm(num_particles, mean = biomass[1], sd = sd_data)
+
+x_prior <- x 
+x_prior[1, ] <- x[1, ]
+
+for(t in 2:num_time_steps){
+  
+  ## forward step
+  for(i in 1:num_particles){
+    biomass_predicted <- x[t-1, i] + mean(df$g) - mean(df$u) * x[t-1, i]
+
+    x[t, i ] <- rnorm(1, mean = biomass_predicted , sd = mean(df$sd_add))
+  }
+  
+  x_prior[t, ] <- x[t, ]
+ 
+  ## analysis step
+  if(!is.na(biomass[t])){ 
+
+      ## calculate Likelihood (weights for each particle)
+      wt <- dnorm(biomass[t], mean = x[t, ], sd = sd_data)    ## calculate likelihood (weight)
+      
+      wt_norm <- wt / sum(wt)
+      
+      ## resample ensemble members in proportion to their weight
+      resample_index <- sample(1:num_particles, num_particles, replace = TRUE, prob = wt_norm) 
+      
+      x[t, ] <- x[t, resample_index]  ## update state
+  }
+}
 ```
 
 #### Step 3: Visualize particle filter output
@@ -117,6 +181,14 @@ Generate a plot that visualizes the output of the PF (see examples from the lect
 
 ```{r}
 # ADD VISUALIZATION CODE HERE
+ tibble(time = 1:num_time_steps,
+       as_tibble(x)) %>% 
+  pivot_longer(cols = -time, names_to = "ensemble", values_to = "x") |> 
+  #mutate(x = exp(x)) |> 
+  ggplot(aes(x = time, y = x, group = factor(ensemble))) +
+  geom_line()
+  labs(x = "Date", y = "biomass", title = "biomass of a forest") +
+  theme_bw()
 ```
 
 #### Step 4: Save PF output
@@ -124,7 +196,9 @@ Generate a plot that visualizes the output of the PF (see examples from the lect
 use this code to save your PF output as the object `initial_forecast`
 
 ```{r}
-
+initial_forecast <- tibble(time = 1:num_time_steps,
+       as_tibble(x)) %>% 
+  pivot_longer(cols = -time, names_to = "ensemble", values_to = "x")
 ```
 
 ### Part 3:
