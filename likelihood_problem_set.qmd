@@ -48,7 +48,7 @@ bart_2019 |>
 ```
 
 As the day of year (doy) increases, the gcc_90 stays relatively flat until a certain day, and then it rapidly increases, then stays flay but with less stabililty for the rest of the year.
-  
+
 **Question 2:** Use a histogram to examine the distribution of the gcc_90
 
 **Answer 2:**
@@ -59,15 +59,15 @@ bart_2019 |>
   ggplot()+
   geom_histogram(aes(x = observation))
 ```
+
 gcc_90 is not normally distributed, and might be better described using a different probability distribution.
-  
+
 First create a function called \`pred_logistic' that is your process model. The model is the the logistic curve which is the equation $$P_1 + P_2 {{exp(P_3 + P_4 x)}\over{1+exp(P_3 + P_4 x)}}$$
 
 **Question 3:** Is this process model a dynamic model? Why or why not?
 
-**Answer 3:**
-This model is not a dynamic model, because it does not rely upon the previous states.
-  
+**Answer 3:** This model is not a dynamic model, because it does not rely upon the previous states.
+
 **Question 4:** Based on the equation above, write a function that predicts the gcc_90 as a function of the parameters ($P$) and x where x is the DOY. Name that function `pred_logistic`.
 
 **Answer 4:**
@@ -129,8 +129,7 @@ hist(residuals)
 
 **Question 9:** How does the distribution of the data (Question 2) compare to the distribution of the residuals?
 
-**Answer 9:**
-The distribution of the data is extremely skewed with some outliers to the right, but the distribution of the residuals could be described by a normal distribution.
+**Answer 9:** The distribution of the data is extremely skewed with some outliers to the right, but the distribution of the residuals could be described by a normal distribution.
 
 **Question 10:** Predict year 2020 using the process model parameters from the 2019 fit.
 
@@ -217,4 +216,3 @@ ggplot(df) +
   geom_point(aes(x = doy, y = soil_resp))+
   geom_line(aes(x = doy, y = pred_q10(x = df$soil_temp, par = fit$par)))
 ```
-
