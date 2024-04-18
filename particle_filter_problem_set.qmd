@@ -1,6 +1,8 @@
 ---
 title: "Particle filter"
-format: html
+format: 
+  html: 
+    embed-resources: true
 editor: visual
 ---
 
@@ -43,7 +45,7 @@ This step is already done for you.
 Here is the data for ages 1 through 50 for the plot (starting in 1950-01-01). It was measured every 5 years.
 
 ```{r}
-plot_data <- read_csv("https://github.com/frec-5174/eco4cast-in-R-book/blob/main/data/PF_data1.csv", show_col_types = FALSE)
+plot_data <- read_csv("https://raw.githubusercontent.com/frec-5174/eco4cast-in-R-book/main/data/PF_data1.csv", show_col_types = FALSE)
 ```
 
 ```{r}
