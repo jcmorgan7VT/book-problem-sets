@@ -109,7 +109,7 @@ obs <- NULL
 
 Write the code and run the particle filter based on the examples from the lecture. You will need to include the process model that is in the NIMBLE code above.
 
-```{r}
+```{r, warning = FALSE}
 #sequential method from above
 sim_dates <- seq(as_date("1950-01-01"), length.out = 50, by = "1 year")
 num_particles <- 100
