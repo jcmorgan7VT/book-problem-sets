@@ -144,25 +144,22 @@ p1 / p2
 
 **Question 1**: Provide the distribution and parameters describing the distribution for your prior distributions. Justify why you chose the distribution and parameters. (do not spend time looking at the literature for values to use to build prior distribution - just give plausible priors and say why their plausible)
 
-**Answer 1:**
-In the example above, the priors are normally distributed, and pulled from a random distribution based on the previous randomly drawn value. Instead, I will keep the priors normally distributed, but the distributions will be described using these functions:
-
-- dnorm(proposed_pars[1], mean = 3, sd = 1, log = TRUE) 
-- dnorm(proposed_pars[2], mean = 0.5, sd = 0.25, log = TRUE)
-
-The mean and standard deviation used in the functions to describe the distribution of the parameters were determined from the distribution of parameters in the example. It produced reasonable values, and by starting close to it's output I hope to save computation time. Additionally, an optim log likelihood method could be used to determine reasonable starting points for parameters for the prior distribution.
-  
+**Answer 1:** Based on the output of the likelihood analysis from the last assignment, I will use the starting values 6.745570, 2.349325, and 0.682040. I will assume that each of these parameters are normally distributed, with a standard deviation of 1.
 
 **Question 2:** Provide plots of your prior distributions.
 
 **Answer 2:**
 
 ```{r}
-h1 <- rnorm(seq(1, 100, 1), mean = 3, sd = 0.05)
-h2 <- rnorm(seq(1, 100, 1), mean = 0.5, sd = 0.05)
+#output from log-likelihood method:
+#6.745570 2.349325 0.682040
+h1 <- rnorm(seq(1, 100, 1), mean = 6.745570, sd = 1)
+h2 <- rnorm(seq(1, 100, 1), mean = 2.349325, sd = 1)
+h3 <- rnorm(seq(1, 100, 1), mean = 0.682040, sd = 1)
 
 hist(h1)
 hist(h2)
+hist(h3)
 ```
 
 **Question 3:** Modify the code above to estimate the posterior distribution of your parameters. Put your modified code below.
@@ -173,16 +170,19 @@ hist(h2)
 #read in data from likelihood
 df <- read_csv("https://raw.githubusercontent.com/frec-5174/eco4cast-in-R-book/main/data/soil_respiration_module_data.csv", show_col_types = FALSE)
 
+x <- df$soil_temp
+y <- df$soil_resp
+
 #Set MCMC Configuration
 num_iter <- 2000
 num_pars <- 3
-jump <- c(0.001, 0.001, 0.001)
+jump <- c(0.01, 0.01, 0.01)
 
 #Initialize chain
 pars <- array(NA, dim = c(num_pars, num_iter))
-pars[1, 1] <- 2
-pars[2, 1] <- 1
-pars[3, 1] <- 0.25 #modify this
+pars[1, 1] <- 6 #6.745570  
+pars[2, 1] <- 2 # 2.349325
+pars[3, 1] <- 0.5 #0.682040 #modify this
 log_likelihood_prior_current <- -10000000000
 
 for(i in 2:num_iter){
@@ -218,7 +218,7 @@ for(i in 2:num_iter){
       ##########################
       # DATA MODEL
       #########################
-      log_likelihood[m] <- dnorm(y[m], mean = pred[m], sd = sd_data, log = TRUE)
+      log_likelihood[m] <- dnorm(y[m], mean = pred[m], sd = proposed_pars[3], log = TRUE)
     }
     #Remember that you multiply probabilities which mean you can add log(probability)
     #Hence the use of sum
@@ -265,16 +265,11 @@ nburn <- 100
 d <- tibble(iter = 1:num_iter,
             par1 = pars[1, ],
             par2 = pars[2, ],
-            par3 = pars[2, ]) %>%
+            par3 = pars[3, ]) %>%
   pivot_longer(-iter, values_to = "value", names_to = "parameter") 
   
   
-p1 <- ggplot(d, aes(x = iter, y = value)) +
-  geom_line() +
-  facet_wrap(~parameter, scales = "free") +
-  theme_bw()
 
-p1
 #   slice(nburn:num_iter) |> 
 #   group_by(parameter) |> 
 #   summarise(mean = mean(value),
@@ -292,13 +287,7 @@ p1
 **Answer 4:**
 
 ```{r}
-d <- tibble(iter = 1:num_iter,
-            par1 = pars[1, ],
-            par2 = pars[2, ]) %>%
-  pivot_longer(-iter, values_to = "value", names_to = "parameter")
-
-  
-  p1 <- ggplot(d, aes(x = iter, y = value)) +
+p1 <- ggplot(d, aes(x = iter, y = value)) +
   geom_line() +
   facet_wrap(~parameter, scales = "free") +
   theme_bw()
@@ -308,21 +297,20 @@ p1
 
 **Question 5:** Approximately how many iterations did it take your chain to converge to a straight line with constant variation around the line (i.e., a fuzzy caterpillar). This is the burn-in. If your chain did not converge, modify the `jump` variable for each parameters and/or increase your iterations. You should not need more than 10000 iterations for convergence so running the chain for a long period of time will not fix issues that could be fixed by modifying the `jump` variable. Also, pay attention to the `sd_data` parameter. You should estimate it as a parameter or set it to a reasonable value. If it is too small your chain will fail because the probability of the some of parameters that are explored functionally zero.
 
-**Answer 5:**
-It took 2 iterations for my first parameter, and ~10 parameters for my second parameter. I think that the burn-in was so short because of my informed means and standard deviations from the exmaple run of this model.  
+**Answer 5:** It took about 750 iterations for my first parameter, 1000 for my second, and 10 for my first parameter. I think that they differed so much because of the magnitude of the parameters in relation to the jump value.
 
 **Question 6:** Remove the iterations between 1 and your burn-in number and plot the histograms for your parameters.
 
-
-
 **Answer 6:**
+
 ```{r}
-nburn <- 10
+nburn <- 750
 
 #calculate statistics for posterior distributions
 par_post_burn <- tibble(iter = 1:num_iter,
             par1 = pars[1, ],
-            par2 = pars[2, ]) %>%
+            par2 = pars[2, ],
+            par3 = pars[3, ]) %>%
   pivot_longer(-iter, values_to = "value", names_to = "parameter") |> 
   slice(nburn:num_iter) 
 
@@ -334,14 +322,16 @@ p2 <- ggplot(par_post_burn, aes(x = value)) +
 p2
 
 ```
-  
+
 **Question 7:** Provide the mean and 95% Credible Intervals for each parameter
 
 **Answer 7:**
+
 ```{r}
 d <- tibble(iter = 1:num_iter,
             par1 = pars[1, ],
-            par2 = pars[2, ]) %>%
+            par2 = pars[2, ],
+            par3 = pars[3, ]) %>%
   pivot_longer(-iter, values_to = "value", names_to = "parameter") |> 
   slice(nburn:num_iter) |> 
   group_by(parameter) |> 
@@ -352,8 +342,8 @@ d <- tibble(iter = 1:num_iter,
 d
 
 ```
-  
-**Question 8:** Random select 1000 values from the parameters in your posterior distribution. Show the randomly selected values for each parameter as a histogram.
+
+**Question 8:** Randomly select 1000 values from the parameters in your posterior distribution. Show the randomly selected values for each parameter as a histogram.
 
 **Answer 8:**
 
@@ -362,13 +352,19 @@ num_samples <- 1000
 sample_index <- sample(x = 1:num_iter, size = num_samples, replace = TRUE)
 burn1 <- filter(par_post_burn, parameter == "par1")
 burn2 <- filter(par_post_burn, parameter == "par2")
+burn3 <- filter(par_post_burn, parameter == "par3")
+
 
 random_draws1 <- burn1$value[sample_index]
 random_draws2 <- burn2$value[sample_index]
+random_draws3 <- burn3$value[sample_index]
+
 
 
 hist(random_draws1)
 hist(random_draws2)
+hist(random_draws3)
+
 
 
 ```
@@ -384,7 +380,8 @@ nburn <- 100
 #calculate statistics for posterior distributions
 d <- tibble(iter = 1:num_iter,
             par1 = pars[1, ],
-            par2 = pars[2, ]) %>%
+            par2 = pars[2, ],
+            par3 = pars[3, ]) %>%
   slice(nburn:num_iter) 
 #display statistics
 
@@ -399,8 +396,9 @@ y_posterior <- matrix(NA, num_samples, length(x_new))
 
 for(i in 1:num_samples){
   sample_index <- sample(x = 1:length(d$iter), size = 1, replace = TRUE)
-  pred_posterior_mean[i, ] <- d$par1[sample_index] * (x_new / (x_new + d$par2[sample_index]))
-  y_posterior[i, ] <- rnorm(length(x_new), pred_posterior_mean[i, ], sd = sd_data)
+  
+  pred_posterior_mean[i, ] <- d$par1[sample_index] * d$par2[sample_index]^((x_new-20)/10)
+  y_posterior[i, ] <- rnorm(length(x_new), pred_posterior_mean[i, ], sd = d$par3[sample_index])
   
 }
 n.stats.y <- apply(y_posterior, 2, quantile, c(0.025, 0.5, 0.975))
