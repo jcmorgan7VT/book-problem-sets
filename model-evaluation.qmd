@@ -27,6 +27,11 @@ df <- all_results |>
          reference_datetime > as_date("2024-03-15")) |> 
   collect()
 
+
+# Use code below
+
+all_results <- arrow::open_dataset("s3://anonymous@bio230014-bucket01/challenges/scores/parquet/project_id=neon4cast/duration=P1D/variable=temperature/model_id=TSLM_seasonal_JM?endpoint_override=sdsc.osn.xsede.org")
+df <- all_results |> dplyr::collect()
 ```
 
 ### Question 2
