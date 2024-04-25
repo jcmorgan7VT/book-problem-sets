@@ -14,6 +14,7 @@ You will need the following packages
 #| message: false
 library(tidyverse)
 library(lubridate)
+set.seed(10) # set seed so my graph doesn't change between renders
 ```
 
 ### Overview
@@ -110,34 +111,18 @@ obs <- NULL
 Write the code and run the particle filter based on the examples from the lecture. You will need to include the process model that is in the NIMBLE code above.
 
 ```{r, warning = FALSE}
-#sequential method from above
-sim_dates <- seq(as_date("1950-01-01"), length.out = 50, by = "1 year")
-num_particles <- 100
-
-biomass <- array(NA, dim = c(length(sim_dates), num_particles))
-biomass[1, ] <- 0
-
-for(t in 2:length(sim_dates)){
-
-  for(i in 1:num_particles){
-
-    biomass_predicted <- biomass[t-1, i] + param$g - param$u * biomass[t-1, i]
-
-    biomass[t, i] <- rnorm(1, mean = biomass_predicted , sd = param$sd_add)
-  }
-}
 
 num_particles <- 25
 
-future_dates <- seq(as_date("2000-01-01"), length.out = 20, by = "1 year")
-biomass <- array(NA, dim = c(length(sim_dates), num_particles))
+future_dates <- seq(as_date("2000-01-01"), length.out = 20, by = "1 year") 
+biomass <- array(NA, dim = c(length(future_dates), num_particles)) #y
 
 ####particle filter from lecture
 
 num_time_steps <- length(future_dates)
 
 #This sets all the observations to NA after the first
-biomass[1, ] <- 6000
+biomass[1 ] <- 6000
 
 
 sd_data <- 200
@@ -186,7 +171,7 @@ Generate a plot that visualizes the output of the PF (see examples from the lect
   pivot_longer(cols = -time, names_to = "ensemble", values_to = "x") |> 
   #mutate(x = exp(x)) |> 
   ggplot(aes(x = time, y = x, group = factor(ensemble))) +
-  geom_line()
+  geom_line()+
   labs(x = "Date", y = "biomass", title = "biomass of a forest") +
   theme_bw()
 ```
@@ -198,7 +183,8 @@ use this code to save your PF output as the object `initial_forecast`
 ```{r}
 initial_forecast <- tibble(time = 1:num_time_steps,
        as_tibble(x)) %>% 
-  pivot_longer(cols = -time, names_to = "ensemble", values_to = "x")
+  pivot_longer(cols = -time, names_to = "ensemble", values_to = "x")%>% 
+  mutate(type = "no obs")
 ```
 
 ### Part 3:
@@ -208,7 +194,9 @@ Now we have new data!
 ```{r}
 #| warning: false
 
-new_data <- read_csv("https://github.com/frec-5174/eco4cast-in-R-book/blob/main/data/PF_data2.csv", show_col_types = FALSE)
+new_data <- read_csv("https://raw.githubusercontent.com/frec-5174/eco4cast-in-R-book/main/data/PF_data2.csv", show_col_types = FALSE)
+
+
 
 ggplot(new_data, aes(x = datetime, y = biomass)) +
   geom_point() +
@@ -221,7 +209,7 @@ ggplot(new_data, aes(x = datetime, y = biomass)) +
 Using the new data, repeat the PF set up in Part 2 Step 1. You will be starting at age 50 just like above.
 
 ```{r}
-#ADD CODE TO SET UP PF HERE
+
 ```
 
 #### Step 2: Run particle filter using the new data
@@ -229,7 +217,59 @@ Using the new data, repeat the PF set up in Part 2 Step 1. You will be starting 
 Using the new data, run the the PF again. This will be the same code as in Part 2 Step 2 (just copy and paste)
 
 ```{r}
-#COPY AND PASTE PF CODE FROM ABOVE
+#Particle filter with new data to inform particle selection
+
+num_particles <- 25
+
+future_dates <- seq(as_date("2000-01-01"), length.out = 20, by = "1 year")
+biomass <- array(NA, dim = c(length(future_dates), num_particles))
+
+####particle filter from lecture
+
+num_time_steps <- length(future_dates)
+
+#This sets all the observations to NA after the first
+biomass[1 ] <- 6000
+#add observations of biomass
+biomass[c(6, 11)] <- new_data$biomass[c(6, 11)]
+#y[c(5, 10)] <- log(gflu$Virginia)[c(5, 10)]
+
+
+
+sd_data <- 200
+
+x <- array(NA, dim = c(num_time_steps, num_particles))
+x[1, ] <- rnorm(num_particles, mean = biomass[1], sd = sd_data)
+
+x_prior <- x 
+x_prior[1, ] <- x[1, ]
+
+for(t in 2:num_time_steps){
+  
+  ## forward step
+  for(i in 1:num_particles){
+    biomass_predicted <- x[t-1, i] + mean(df$g) - mean(df$u) * x[t-1, i]
+
+    x[t, i ] <- rnorm(1, mean = biomass_predicted , sd = mean(df$sd_add))
+  }
+  
+  x_prior[t, ] <- x[t, ]
+ 
+  ## analysis step
+  if(!is.na(biomass[t])){ 
+
+      ## calculate Likelihood (weights for each particle)
+      wt <- dnorm(biomass[t], mean = x[t, ], sd = sd_data)    ## calculate likelihood (weight)
+      
+      wt_norm <- wt / sum(wt)
+      
+      ## resample ensemble members in proportion to their weight
+      resample_index <- sample(1:num_particles, num_particles, replace = TRUE, prob = wt_norm) 
+      
+      x[t, ] <- x[t, resample_index]  ## update state
+  }
+}
+
 ```
 
 #### Step 3: Visualize PF output
@@ -238,12 +278,22 @@ Generate a plot that visualizes the output of the PF (see examples from the lect
 
 ```{r}
 #ADD VISUALIZATION CODE HERE
+tibble(time = 1:num_time_steps,
+       as_tibble(x)) %>% 
+  pivot_longer(cols = -time, names_to = "ensemble", values_to = "x") |> 
+  ggplot(aes(x = time, y = x, group = factor(ensemble))) +
+  geom_line() +
+  labs(x = "time", y = "biomass", title = "aboveground biomass of a forest") +
+  theme_bw()
 ```
 
 #### Step 4: Save output
 
 ```{r}
-
+data_forecast <- tibble(time = 1:num_time_steps,
+       as_tibble(x)) %>% 
+  pivot_longer(cols = -time, names_to = "ensemble", values_to = "x")%>% 
+  mutate(type = "with obs")
 ```
 
 ### Part 4:
@@ -252,6 +302,26 @@ Combine the two PF forecast and evaluate how data assimilation influence the for
 
 ```{r}
 #ADD CODE TO COMPARE THE TWO PF OUTPUTS
+combined <- bind_rows(initial_forecast, data_forecast)
+
+add_time <- tibble(time = 1:num_time_steps,
+                   datetime = future_dates)
+
+#new_data$biomass_obs[] <- 
+
+combined %>% 
+  left_join(add_time) |> 
+  group_by(datetime, type) %>% 
+  summarise(mean = mean(x),
+            upper = quantile(x, 0.975),
+            lower = quantile(x, 0.025),.groups = "drop") %>% 
+  ggplot(aes(x = datetime, y = mean)) +
+  geom_line(aes(color = type)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, color = type, fill = type), alpha = 0.2) +
+  #geom_point(data = gflu, aes(x = Date, y = log(Virginia)), color = "red") +
+  geom_point(data = new_data, aes(x = datetime, y = biomass), color = "black") +
+  labs(x = "Time", y = "Biomass", title = "Forest aboveground biomass") +
+  theme_bw()
 ```
 
 ### Part 5:
@@ -259,3 +329,5 @@ Combine the two PF forecast and evaluate how data assimilation influence the for
 Answer the follow question
 
 How did assimilating data influence your forecast for ages 60 to 70? Consider both the mean and uncertainty in your answer.
+
+Assimilating data seems to have improved my forecast. The mean with observations is lower, but approaching the mean with no observations. The standard deviation of the particles in the assimilated forecast are much lower, resulting in a much narrower confidence interval. This may be good for the final 10 year forecast, unless the actual aboveground biomass falls outside of the confidence interval. My forecast for  ages 60-70 is similar between the two forecasts, but has less uncertainty in the forecast informed by new observations.
