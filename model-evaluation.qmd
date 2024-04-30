@@ -16,31 +16,59 @@ Resources:
 
 <https://frec-5174.github.io/eco4cast-in-R-book/process-model-forecast-evaluation.html>
 
+```{r}
+library(tidyverse)
+library(lubridate)
+library(arrow)
+```
+
 ### Question 1
 
 Plot climatology, persistence, and your model for a single forecast day (one reference_datetime) on the same plot. Use geom_ribbon to plot the uncertainty, geom_line to plot the median, and geom_point to plot the observations.
 
 ```{r}
-all_results <- arrow::open_dataset("s3://anonymous@bio230014-bucket01/challenges/scores/parquet/project_id=neon4cast/duration=P1D/variable=nee/model_id=bookcast_forest?endpoint_override=sdsc.osn.xsede.org")
-df <- all_results |> 
-  filter(site_id == "OSBS",
-         reference_datetime > as_date("2024-03-15")) |> 
-  collect()
-
-
 # Use code below
 
-all_results <- arrow::open_dataset("s3://anonymous@bio230014-bucket01/challenges/scores/parquet/project_id=neon4cast/duration=P1D/variable=temperature/model_id=TSLM_seasonal_JM?endpoint_override=sdsc.osn.xsede.org")
-df <- all_results |> dplyr::collect()
+JM <- arrow::open_dataset("s3://anonymous@bio230014-bucket01/challenges/scores/parquet/project_id=neon4cast/duration=P1D/variable=temperature/model_id=TSLM_seasonal_JM?endpoint_override=sdsc.osn.xsede.org") |> 
+  dplyr::collect() |> 
+  mutate(model_id = "TSLM_seasonal_JM")
+
+climatology <- arrow::open_dataset("s3://anonymous@bio230014-bucket01/challenges/scores/parquet/project_id=neon4cast/duration=P1D/variable=temperature/model_id=climatology?endpoint_override=sdsc.osn.xsede.org") |> 
+  dplyr::collect() |> 
+  mutate(model_id = "climatology")
+
+persistenceRW <- arrow::open_dataset("s3://anonymous@bio230014-bucket01/challenges/scores/parquet/project_id=neon4cast/duration=P1D/variable=temperature/model_id=persistenceRW?endpoint_override=sdsc.osn.xsede.org") |> 
+  dplyr::collect() |> 
+  mutate(model_id = "persistenceRW")
+
+alldata <- bind_rows(JM, climatology, persistenceRW)
+alldata$reference_datetime <- ymd(alldata$reference_datetime)
+alldata$date <- ymd(alldata$date)
+
+alldata |> summarise(min = min(reference_datetime),
+                     max = max(reference_datetime),
+                     .by = model_id)
+
+filter(alldata, reference_datetime ==  "2024-03-04", site_id == "BARC") |> 
+ggplot() +
+  geom_line(aes(x = date, y = median, color = model_id))+
+  geom_ribbon(aes(x = date, ymin = quantile02.5, ymax = quantile97.5, color = model_id, fill = model_id), alpha = 0.2)+
+  geom_point(aes(x = date, y = observation))+
+  labs(title = "Model predictions for BARC")
+
 ```
 
 ### Question 2
 
-Based on visual inspection of your plot, how do the median of model differ in how they represent the observations.
+Based on visual inspection of your plot, how do the median of models differ in how they represent the observations.
+  
+The climatology median is very close to the actual temperatures observed. At some points my model does better, but at many times it is worse. The persistence model is very consistently slightly below the actual temperature.   
 
 ### Question 3
 
 Based on visual inspection of your plot, how does the uncertainty of each model forecasts differ in capacity to represent the observations.
+  
+The persistence model has the most uncertainty, and it gets significantly wider as the horizon increases. This successfully captures all of the observations. The climatology does not have uncertainty that propagates, so the confidence interval doesn't grow as the horizon increases. Despite this, it still captures the observations successfully. My model does not have enough uncertainty, which often results in the observations falling outside of my confidence interval, so it does a poor job of representing the observations.  
 
 ### Question 4
 
